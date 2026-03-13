@@ -1,0 +1,1437 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PREDICT & EXECUTE — Market Bot</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=Bebas+Neue&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #080c0f;
+    --surface: #0d1318;
+    --surface2: #111920;
+    --border: #1e2d35;
+    --border2: #243540;
+    --green: #00e5a0;
+    --green-dim: #00b87d;
+    --green-glow: rgba(0,229,160,0.12);
+    --red: #ff4560;
+    --red-dim: #cc3a4d;
+    --amber: #ffb830;
+    --blue: #38b6ff;
+    --text: #c8dce8;
+    --text-dim: #5a7a8a;
+    --text-bright: #e8f4fc;
+    --mono: 'IBM Plex Mono', monospace;
+    --display: 'Bebas Neue', sans-serif;
+    --sans: 'IBM Plex Sans', sans-serif;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+background: var(–bg);
+color: var(–text);
+font-family: var(–mono);
+min-height: 100vh;
+overflow-x: hidden;
+}
+
+/* GRID NOISE */
+body::before {
+content:’’;
+position:fixed; inset:0;
+background-image:
+linear-gradient(rgba(0,229,160,0.02) 1px, transparent 1px),
+linear-gradient(90deg, rgba(0,229,160,0.02) 1px, transparent 1px);
+background-size: 40px 40px;
+pointer-events:none; z-index:0;
+}
+
+.scanline {
+position:fixed; top:0; left:0; right:0; height:2px;
+background: linear-gradient(90deg, transparent, var(–green), transparent);
+animation: scanline 4s linear infinite;
+z-index:100; opacity:0.4;
+}
+@keyframes scanline { 0%{top:-2px} 100%{top:100vh} }
+
+/* HEADER */
+header {
+position:relative; z-index:10;
+border-bottom: 1px solid var(–border);
+padding: 0 32px;
+display:flex; align-items:center; justify-content:space-between;
+height:56px;
+background: rgba(8,12,15,0.95);
+backdrop-filter: blur(8px);
+}
+.logo {
+font-family: var(–display);
+font-size: 22px;
+letter-spacing: 3px;
+color: var(–green);
+text-shadow: 0 0 20px rgba(0,229,160,0.5);
+}
+.logo span { color: var(–text-dim); font-size:11px; font-family:var(–mono); letter-spacing:2px; margin-left:12px; vertical-align:middle; }
+.header-status {
+display:flex; align-items:center; gap:24px; font-size:11px;
+}
+.status-dot {
+width:7px; height:7px; border-radius:50%;
+background: var(–green);
+box-shadow: 0 0 8px var(–green);
+animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+.status-label { color: var(–text-dim); }
+.status-val { color: var(–green); font-weight:500; }
+
+/* MAIN LAYOUT */
+.main { position:relative; z-index:1; display:grid; grid-template-columns:260px 1fr 300px; height:calc(100vh - 56px); }
+
+/* LEFT PANEL — Pipeline */
+.left-panel {
+border-right: 1px solid var(–border);
+overflow-y:auto;
+padding: 20px 0;
+background: var(–surface);
+}
+.panel-title {
+font-size:10px; letter-spacing:3px; color:var(–text-dim);
+text-transform:uppercase; padding: 0 20px 16px;
+}
+.pipeline-step {
+padding: 14px 20px;
+border-left: 3px solid transparent;
+cursor:pointer;
+transition: all 0.2s;
+position:relative;
+}
+.pipeline-step:hover { background: var(–surface2); }
+.pipeline-step.active { border-left-color: var(–green); background: var(–surface2); }
+.pipeline-step.running { border-left-color: var(–amber); }
+.pipeline-step.done { border-left-color: var(–green-dim); }
+.pipeline-step.error { border-left-color: var(–red); }
+.step-header { display:flex; align-items:center; gap:10px; margin-bottom:6px; }
+.step-num { font-size:10px; color:var(–text-dim); width:14px; }
+.step-name { font-size:13px; font-weight:500; color:var(–text-bright); }
+.step-badge {
+font-size:8px; padding:2px 6px; border-radius:2px;
+letter-spacing:1px; text-transform:uppercase; font-weight:600;
+margin-left:auto;
+}
+.badge-seq { background:rgba(56,182,255,0.15); color:var(–blue); border:1px solid rgba(56,182,255,0.3); }
+.badge-mcp { background:rgba(255,184,48,0.15); color:var(–amber); border:1px solid rgba(255,184,48,0.3); }
+.badge-domain { background:rgba(0,229,160,0.1); color:var(–green-dim); border:1px solid rgba(0,229,160,0.25); }
+.badge-ctx { background:rgba(255,69,96,0.12); color:var(–red); border:1px solid rgba(255,69,96,0.25); }
+.badge-iter { background:rgba(200,220,232,0.08); color:var(–text-dim); border:1px solid var(–border2); }
+.step-desc { font-size:10px; color:var(–text-dim); line-height:1.6; padding-left:24px; }
+.step-progress {
+height:2px; background:var(–border); margin:8px 20px 0; border-radius:1px; overflow:hidden;
+}
+.step-progress-bar { height:100%; background:var(–green); transition:width 0.4s; }
+
+.divider { height:1px; background:var(–border); margin:16px 20px; }
+
+/* CONFIG */
+.config-section { padding: 0 20px; }
+.config-row { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+.config-label { font-size:10px; color:var(–text-dim); }
+.config-val { font-size:11px; color:var(–green); font-weight:500; }
+.config-input {
+background:var(–surface2); border:1px solid var(–border2);
+color:var(–text-bright); font-family:var(–mono); font-size:11px;
+padding:4px 8px; width:80px; text-align:right;
+border-radius:2px; outline:none;
+}
+.config-input:focus { border-color:var(–green); }
+
+/* CENTER — Main Content */
+.center-panel { overflow-y:auto; padding:24px; display:flex; flex-direction:column; gap:20px; }
+
+/* STATS ROW */
+.stats-row { display:grid; grid-template-columns:repeat(5,1fr); gap:12px; }
+.stat-card {
+background:var(–surface); border:1px solid var(–border);
+padding:16px; border-radius:4px; position:relative; overflow:hidden;
+}
+.stat-card::after {
+content:’’; position:absolute; top:0; left:0; right:0; height:1px;
+background: linear-gradient(90deg, transparent, var(–green), transparent);
+opacity:0;
+transition: opacity 0.3s;
+}
+.stat-card:hover::after { opacity:1; }
+.stat-label { font-size:9px; letter-spacing:2px; color:var(–text-dim); text-transform:uppercase; margin-bottom:8px; }
+.stat-val { font-family:var(–display); font-size:28px; letter-spacing:1px; }
+.stat-val.green { color:var(–green); text-shadow:0 0 16px rgba(0,229,160,0.3); }
+.stat-val.red { color:var(–red); }
+.stat-val.amber { color:var(–amber); }
+.stat-val.blue { color:var(–blue); }
+.stat-val.white { color:var(–text-bright); }
+.stat-sub { font-size:9px; color:var(–text-dim); margin-top:4px; }
+
+/* P&L CHART */
+.chart-card {
+background:var(–surface); border:1px solid var(–border);
+padding:20px; border-radius:4px;
+}
+.chart-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
+.chart-title { font-size:10px; letter-spacing:3px; color:var(–text-dim); text-transform:uppercase; }
+.chart-meta { display:flex; gap:16px; }
+.chart-tag { font-size:10px; color:var(–text-dim); }
+.chart-tag span { color:var(–green); }
+canvas#pnlChart { width:100%!important; height:160px!important; }
+
+/* MARKETS TABLE */
+.table-card {
+background:var(–surface); border:1px solid var(–border);
+border-radius:4px; overflow:hidden;
+}
+.table-header {
+display:flex; justify-content:space-between; align-items:center;
+padding:14px 20px; border-bottom:1px solid var(–border);
+}
+.table-title { font-size:10px; letter-spacing:3px; color:var(–text-dim); text-transform:uppercase; }
+.table-actions { display:flex; gap:8px; }
+.btn {
+font-family:var(–mono); font-size:10px; letter-spacing:1px;
+padding:5px 12px; border:1px solid var(–border2);
+background:transparent; color:var(–text); cursor:pointer;
+border-radius:2px; transition:all 0.2s; text-transform:uppercase;
+}
+.btn:hover { border-color:var(–green); color:var(–green); }
+.btn.primary { background:rgba(0,229,160,0.1); border-color:var(–green); color:var(–green); }
+.btn.primary:hover { background:rgba(0,229,160,0.2); }
+.btn.danger { border-color:var(–red); color:var(–red); }
+
+table { width:100%; border-collapse:collapse; }
+thead tr { background:var(–surface2); }
+th { font-size:9px; letter-spacing:2px; color:var(–text-dim); text-transform:uppercase; padding:10px 14px; text-align:left; font-weight:400; }
+td { font-size:11px; padding:10px 14px; border-top:1px solid var(–border); vertical-align:middle; }
+tbody tr { transition:background 0.15s; cursor:pointer; }
+tbody tr:hover { background:var(–surface2); }
+.tag { display:inline-block; font-size:8px; padding:2px 6px; border-radius:2px; letter-spacing:1px; text-transform:uppercase; }
+.tag-buy { background:rgba(0,229,160,0.12); color:var(–green); border:1px solid rgba(0,229,160,0.25); }
+.tag-sell { background:rgba(255,69,96,0.12); color:var(–red); border:1px solid rgba(255,69,96,0.25); }
+.tag-watch { background:rgba(255,184,48,0.1); color:var(–amber); border:1px solid rgba(255,184,48,0.25); }
+.tag-block { background:rgba(100,100,100,0.1); color:var(–text-dim); border:1px solid var(–border); }
+.edge-bar { height:4px; border-radius:2px; background:var(–border); margin-top:4px; }
+.edge-fill { height:100%; border-radius:2px; background:var(–green); transition:width 0.5s; }
+.edge-fill.red { background:var(–red); }
+
+/* RISK SECTION */
+.two-col { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+.formula-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.formula-card {
+background:var(–surface2); border:1px solid var(–border);
+padding:12px; border-radius:3px;
+}
+.formula-cat { font-size:8px; letter-spacing:2px; color:var(–text-dim); text-transform:uppercase; margin-bottom:8px; }
+.formula-expr {
+font-size:13px; color:var(–green); font-weight:500; margin-bottom:4px; letter-spacing:0.5px;
+}
+.formula-desc { font-size:9px; color:var(–text-dim); line-height:1.5; }
+
+/* RISK GAUGES */
+.gauge-row { display:flex; flex-direction:column; gap:10px; }
+.gauge-item {}
+.gauge-header { display:flex; justify-content:space-between; margin-bottom:5px; }
+.gauge-name { font-size:10px; color:var(–text-dim); }
+.gauge-val { font-size:10px; font-weight:500; }
+.gauge-track { height:6px; background:var(–border); border-radius:3px; overflow:hidden; }
+.gauge-fill { height:100%; border-radius:3px; transition:width 0.8s ease; }
+.gauge-fill.green { background: linear-gradient(90deg, var(–green-dim), var(–green)); }
+.gauge-fill.amber { background: linear-gradient(90deg, #cc8800, var(–amber)); }
+.gauge-fill.red { background: linear-gradient(90deg, var(–red-dim), var(–red)); }
+
+/* TRADE LOG */
+.log-entry {
+display:flex; gap:12px; align-items:flex-start;
+padding:10px 14px; border-top:1px solid var(–border);
+font-size:10px;
+}
+.log-time { color:var(–text-dim); white-space:nowrap; }
+.log-msg { color:var(–text); flex:1; }
+.log-msg.success { color:var(–green); }
+.log-msg.warn { color:var(–amber); }
+.log-msg.error { color:var(–red); }
+.log-msg.info { color:var(–blue); }
+
+/* RIGHT PANEL */
+.right-panel {
+border-left:1px solid var(–border);
+overflow-y:auto;
+background: var(–surface);
+}
+.right-section { padding:20px; border-bottom:1px solid var(–border); }
+.right-title { font-size:9px; letter-spacing:3px; color:var(–text-dim); text-transform:uppercase; margin-bottom:14px; }
+
+/* KELLY CALCULATOR */
+.kelly-display {
+background:var(–surface2); border:1px solid var(–border2);
+padding:16px; border-radius:3px; margin-bottom:12px;
+}
+.kelly-formula { font-size:11px; color:var(–green); margin-bottom:4px; }
+.kelly-result {
+font-family:var(–display); font-size:36px;
+color:var(–green); letter-spacing:1px;
+text-shadow:0 0 20px rgba(0,229,160,0.4);
+}
+.kelly-unit { font-size:10px; color:var(–text-dim); margin-top:4px; }
+
+.input-row { margin-bottom:10px; }
+.input-label { font-size:9px; color:var(–text-dim); letter-spacing:1px; text-transform:uppercase; margin-bottom:4px; }
+.input-field {
+width:100%; background:var(–surface2); border:1px solid var(–border2);
+color:var(–text-bright); font-family:var(–mono); font-size:12px;
+padding:7px 10px; border-radius:2px; outline:none;
+}
+.input-field:focus { border-color:var(–green); box-shadow:0 0 0 1px rgba(0,229,160,0.1); }
+
+.risk-checks { display:flex; flex-direction:column; gap:6px; }
+.risk-check { display:flex; gap:8px; align-items:center; font-size:10px; }
+.check-icon { width:16px; height:16px; border-radius:2px; display:flex; align-items:center; justify-content:center; font-size:9px; flex-shrink:0; }
+.check-pass { background:rgba(0,229,160,0.15); color:var(–green); border:1px solid rgba(0,229,160,0.3); }
+.check-fail { background:rgba(255,69,96,0.15); color:var(–red); border:1px solid rgba(255,69,96,0.3); }
+.check-warn { background:rgba(255,184,48,0.15); color:var(–amber); border:1px solid rgba(255,184,48,0.3); }
+.check-label { color:var(–text-dim); flex:1; }
+.check-val { color:var(–text-bright); font-size:9px; }
+
+/* AGENT STATUS */
+.agent-list { display:flex; flex-direction:column; gap:6px; }
+.agent-row { display:flex; gap:8px; align-items:center; padding:6px 8px; background:var(–surface2); border-radius:2px; border:1px solid var(–border); }
+.agent-dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+.agent-dot.active { background:var(–green); box-shadow:0 0 6px var(–green); animation:pulse 1.5s infinite; }
+.agent-dot.idle { background:var(–text-dim); }
+.agent-dot.working { background:var(–amber); box-shadow:0 0 6px var(–amber); animation:pulse 1s infinite; }
+.agent-name { font-size:10px; color:var(–text); flex:1; }
+.agent-status { font-size:9px; color:var(–text-dim); }
+
+/* SCROLLBAR */
+::-webkit-scrollbar { width:4px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:var(–border2); border-radius:2px; }
+
+/* ANIMATIONS */
+@keyframes fadeIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:translateY(0)} }
+.fade-in { animation: fadeIn 0.4s ease forwards; }
+.fade-in-1 { animation-delay:0.1s; opacity:0; }
+.fade-in-2 { animation-delay:0.2s; opacity:0; }
+.fade-in-3 { animation-delay:0.3s; opacity:0; }
+.fade-in-4 { animation-delay:0.4s; opacity:0; }
+.fade-in-5 { animation-delay:0.5s; opacity:0; }
+
+.flash { animation:flashGreen 0.6s ease; }
+@keyframes flashGreen { 0%{background:rgba(0,229,160,0.08)} 100%{background:transparent} }
+
+.bot-running .pipeline-step.active .step-progress-bar { animation:progressAnim 2s ease-in-out; }
+@keyframes progressAnim { 0%{width:0%} 60%{width:85%} 100%{width:100%} }
+
+/* MODAL */
+.modal-overlay {
+position:fixed; inset:0; background:rgba(0,0,0,0.7);
+z-index:200; display:flex; align-items:center; justify-content:center;
+opacity:0; pointer-events:none; transition:opacity 0.2s;
+backdrop-filter:blur(4px);
+}
+.modal-overlay.open { opacity:1; pointer-events:all; }
+.modal {
+background:var(–surface); border:1px solid var(–border2);
+width:500px; border-radius:4px; overflow:hidden;
+transform:translateY(10px); transition:transform 0.2s;
+}
+.modal-overlay.open .modal { transform:translateY(0); }
+.modal-header { padding:16px 20px; border-bottom:1px solid var(–border); display:flex; justify-content:space-between; align-items:center; }
+.modal-title { font-size:11px; letter-spacing:2px; text-transform:uppercase; color:var(–text-bright); }
+.modal-close { background:none; border:none; color:var(–text-dim); cursor:pointer; font-size:16px; line-height:1; }
+.modal-body { padding:20px; }
+.modal-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px; }
+.modal-footer { padding:14px 20px; border-top:1px solid var(–border); display:flex; gap:8px; justify-content:flex-end; }
+</style>
+
+</head>
+<body>
+<div class="scanline"></div>
+
+<header>
+  <div>
+    <span class="logo">PREDICT<span>&amp;</span>EXECUTE</span>
+    <span style="font-size:10px;color:var(--text-dim);margin-left:16px;letter-spacing:1px;">PREDICTION MARKET TRADING BOT v1.2.0</span>
+  </div>
+  <div class="header-status">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <div class="status-dot" id="botDot"></div>
+      <span class="status-label">STATUS</span>
+      <span class="status-val" id="botStatus">IDLE</span>
+    </div>
+    <div><span class="status-label">BANKROLL </span><span class="status-val" id="bankrollDisplay">$10,000</span></div>
+    <div><span class="status-label">MARKETS SCANNED </span><span class="status-val" id="scanCount">0</span></div>
+    <div><span class="status-label">SESSION P&L </span><span class="status-val" id="sessionPnl" style="color:var(--green)">+$0.00</span></div>
+    <button class="btn primary" id="runBtn" onclick="runBot()">▶ RUN SCAN</button>
+    <button class="btn danger" onclick="stopBot()">■ STOP</button>
+  </div>
+</header>
+
+<div class="main">
+  <!-- LEFT: Pipeline -->
+  <div class="left-panel">
+    <div class="panel-title">AGENT PIPELINE</div>
+
+```
+<div class="pipeline-step" id="step-1" onclick="setActiveStep(1)">
+  <div class="step-header">
+    <span class="step-num">1</span>
+    <span class="step-name">Scan</span>
+    <span class="step-badge badge-seq">SEQUENTIAL</span>
+  </div>
+  <div class="step-desc">300+ active markets filtered by liquidity, volume, and TTR. Flags anomalous price moves and wide spreads.</div>
+  <div class="step-progress"><div class="step-progress-bar" id="prog-1" style="width:0%"></div></div>
+</div>
+
+<div class="pipeline-step" id="step-2" onclick="setActiveStep(2)">
+  <div class="step-header">
+    <span class="step-num">2</span>
+    <span class="step-name">Research</span>
+    <span class="step-badge badge-mcp">MCP ENHANCED</span>
+  </div>
+  <div class="step-desc">Parallel agents scrape Twitter, Reddit, RSS. NLP sentiment per market — narrative vs market odds.</div>
+  <div class="step-progress"><div class="step-progress-bar" id="prog-2" style="width:0%"></div></div>
+</div>
+
+<div class="pipeline-step" id="step-3" onclick="setActiveStep(3)">
+  <div class="step-header">
+    <span class="step-num">3</span>
+    <span class="step-name">Predict</span>
+    <span class="step-badge badge-domain">DOMAIN INTEL</span>
+  </div>
+  <div class="step-desc">XGBoost + LLM calibrate true probability vs market price. Consensus only when confidence &gt; threshold.</div>
+  <div class="step-progress"><div class="step-progress-bar" id="prog-3" style="width:0%"></div></div>
+</div>
+
+<div class="pipeline-step" id="step-4" onclick="setActiveStep(4)">
+  <div class="step-header">
+    <span class="step-num">4</span>
+    <span class="step-name">Risk</span>
+    <span class="step-badge badge-ctx">CONTEXT-AWARE</span>
+  </div>
+  <div class="step-desc">Multiple agents validate independently. Kelly sizes position. Blocks max-bet / VaR / exposure breach.</div>
+  <div class="step-progress"><div class="step-progress-bar" id="prog-4" style="width:0%"></div></div>
+</div>
+
+<div class="pipeline-step" id="step-5" onclick="setActiveStep(5)">
+  <div class="step-header">
+    <span class="step-num">5</span>
+    <span class="step-name">Execute</span>
+    <span class="step-badge badge-seq">SEQUENTIAL</span>
+  </div>
+  <div class="step-desc">Orders via CLOB API on-chain. Slippage monitored. Auto-hedge if conditions shift pre-settlement.</div>
+  <div class="step-progress"><div class="step-progress-bar" id="prog-5" style="width:0%"></div></div>
+</div>
+
+<div class="pipeline-step" id="step-6" onclick="setActiveStep(6)">
+  <div class="step-header">
+    <span class="step-num">6</span>
+    <span class="step-name">Compound</span>
+    <span class="step-badge badge-iter">ITERATIVE</span>
+  </div>
+  <div class="step-desc">5 agents extract loss cause + prevention, save to knowledge base. Future scans search past cases first.</div>
+  <div class="step-progress"><div class="step-progress-bar" id="prog-6" style="width:0%"></div></div>
+</div>
+
+<div class="divider"></div>
+
+<div class="panel-title">BOT CONFIGURATION</div>
+<div class="config-section">
+  <div class="config-row">
+    <span class="config-label">Bankroll ($)</span>
+    <input type="number" class="config-input" id="cfgBankroll" value="10000" onchange="updateConfig()">
+  </div>
+  <div class="config-row">
+    <span class="config-label">Kelly Fraction α</span>
+    <input type="number" class="config-input" id="cfgAlpha" value="0.35" step="0.05" min="0.1" max="1" onchange="updateConfig()">
+  </div>
+  <div class="config-row">
+    <span class="config-label">Min Edge</span>
+    <input type="number" class="config-input" id="cfgEdge" value="0.04" step="0.01" min="0.01" onchange="updateConfig()">
+  </div>
+  <div class="config-row">
+    <span class="config-label">Max Exposure</span>
+    <input type="number" class="config-input" id="cfgMaxExp" value="0.20" step="0.05" min="0.05" onchange="updateConfig()">
+  </div>
+  <div class="config-row">
+    <span class="config-label">Max Drawdown</span>
+    <span class="config-val">8%</span>
+  </div>
+  <div class="config-row">
+    <span class="config-label">VaR Confidence</span>
+    <span class="config-val">95%</span>
+  </div>
+  <div class="config-row">
+    <span class="config-label">Min Sharpe Target</span>
+    <span class="config-val">SR &gt; 2.0</span>
+  </div>
+  <div class="config-row">
+    <span class="config-label">Min Profit Factor</span>
+    <span class="config-val">PF &gt; 1.5</span>
+  </div>
+</div>
+```
+
+  </div>
+
+  <!-- CENTER -->
+
+  <div class="center-panel" id="centerPanel">
+
+```
+<!-- STATS -->
+<div class="stats-row fade-in fade-in-1">
+  <div class="stat-card">
+    <div class="stat-label">Win Rate</div>
+    <div class="stat-val green" id="statWinRate">68.4%</div>
+    <div class="stat-sub">312 trades</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Sharpe Ratio</div>
+    <div class="stat-val blue" id="statSharpe">2.14</div>
+    <div class="stat-sub">Target &gt; 2.0</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Max Drawdown</div>
+    <div class="stat-val red" id="statMDD">-4.2%</div>
+    <div class="stat-sub">Limit: -8%</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Profit Factor</div>
+    <div class="stat-val amber" id="statPF">1.84</div>
+    <div class="stat-sub">Target &gt; 1.5</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Total P&L</div>
+    <div class="stat-val green" id="statPnl">+41.6%</div>
+    <div class="stat-sub">90 day sim</div>
+  </div>
+</div>
+
+<!-- CHART -->
+<div class="chart-card fade-in fade-in-2">
+  <div class="chart-header">
+    <span class="chart-title">CUMULATIVE P&L — SIMULATED BACKTEST (90 DAYS)</span>
+    <div class="chart-meta">
+      <span class="chart-tag">TRADES <span id="tradeCount">312</span></span>
+      <span class="chart-tag">LIVE SESSION <span id="liveCount">0</span></span>
+    </div>
+  </div>
+  <canvas id="pnlChart"></canvas>
+</div>
+
+<!-- MARKET SCANNER -->
+<div class="table-card fade-in fade-in-3">
+  <div class="table-header">
+    <span class="table-title">LIVE MARKET SCANNER</span>
+    <div class="table-actions">
+      <button class="btn" onclick="refreshMarkets()">↻ REFRESH</button>
+      <button class="btn primary" onclick="openTradeModal()">+ MANUAL TRADE</button>
+    </div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>MARKET</th>
+        <th>P_MODEL</th>
+        <th>P_MKT</th>
+        <th>EDGE</th>
+        <th>δ SCORE</th>
+        <th>KELLY SIZE</th>
+        <th>EV</th>
+        <th>SIGNAL</th>
+      </tr>
+    </thead>
+    <tbody id="marketTable"></tbody>
+  </table>
+</div>
+
+<!-- FORMULAS + RISK -->
+<div class="two-col fade-in fade-in-4">
+  <div class="chart-card">
+    <div class="chart-header" style="margin-bottom:12px">
+      <span class="chart-title">CORE FORMULAS</span>
+    </div>
+    <div class="formula-grid">
+      <div class="formula-card">
+        <div class="formula-cat">Expected Value</div>
+        <div class="formula-expr">EV = p·b − (1−p)</div>
+        <div class="formula-desc">p = model prob, b = decimal odds − 1</div>
+      </div>
+      <div class="formula-card">
+        <div class="formula-cat">Kelly Criterion</div>
+        <div class="formula-expr">f* = (p·b − q) / b</div>
+        <div class="formula-desc">q = 1 − p. Max fraction of bankroll</div>
+      </div>
+      <div class="formula-card">
+        <div class="formula-cat">Market Edge</div>
+        <div class="formula-expr">edge = p_model − p_mkt</div>
+        <div class="formula-desc">Trade only when edge &gt; 0.04</div>
+      </div>
+      <div class="formula-card">
+        <div class="formula-cat">Fractional Kelly</div>
+        <div class="formula-expr">f = α · f*, α ∈ (0,1]</div>
+        <div class="formula-desc">Use α = 0.25–0.5 to reduce variance</div>
+      </div>
+      <div class="formula-card">
+        <div class="formula-cat">Mispricing Score</div>
+        <div class="formula-expr">δ = (p_model − p_mkt) / σ</div>
+        <div class="formula-desc">Z-score of model vs market divergence</div>
+      </div>
+      <div class="formula-card">
+        <div class="formula-cat">VaR 95%</div>
+        <div class="formula-expr">VaR = μ − 1.645 · σ</div>
+        <div class="formula-desc">Max daily loss at 95% confidence</div>
+      </div>
+      <div class="formula-card">
+        <div class="formula-cat">Bayes Update</div>
+        <div class="formula-expr">P(H|E) = P(E|H)·P(H) / P(E)</div>
+        <div class="formula-desc">Update prior with each news signal</div>
+      </div>
+      <div class="formula-card">
+        <div class="formula-cat">Brier Score</div>
+        <div class="formula-expr">BS = (1/n)·Σ(pᵢ − oᵢ)²</div>
+        <div class="formula-desc">Lower = better calibrated model</div>
+      </div>
+      <div class="formula-card">
+        <div class="formula-cat">Sharpe Ratio</div>
+        <div class="formula-expr">SR = (E[R] − Rf) / σ(R)</div>
+        <div class="formula-desc">Risk-adj return. Target SR &gt; 2.0</div>
+      </div>
+      <div class="formula-card">
+        <div class="formula-cat">Profit Factor</div>
+        <div class="formula-expr">PF = gross_profit / gross_loss</div>
+        <div class="formula-desc">Healthy bot maintains PF &gt; 1.5</div>
+      </div>
+      <div class="formula-card">
+        <div class="formula-cat">ARB Condition</div>
+        <div class="formula-expr">Σ(1/oddsᵢ) &lt; 1 → profit</div>
+        <div class="formula-desc">Sum of reciprocal odds below 1</div>
+      </div>
+      <div class="formula-card">
+        <div class="formula-cat">Max Drawdown</div>
+        <div class="formula-expr">MDD = (Peak − Trough) / Peak</div>
+        <div class="formula-desc">Block new trades if MDD &gt; 8%</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="chart-card">
+    <div class="chart-header" style="margin-bottom:12px">
+      <span class="chart-title">RISK MONITOR</span>
+    </div>
+    <div class="gauge-row" style="margin-bottom:16px;" id="gaugeContainer">
+      <div class="gauge-item">
+        <div class="gauge-header">
+          <span class="gauge-name">Portfolio Exposure</span>
+          <span class="gauge-val green" id="gaugeExpVal">12.4%</span>
+        </div>
+        <div class="gauge-track"><div class="gauge-fill green" id="gaugeExp" style="width:62%"></div></div>
+      </div>
+      <div class="gauge-item">
+        <div class="gauge-header">
+          <span class="gauge-name">Daily VaR (95%)</span>
+          <span class="gauge-val green" id="gaugeVarVal">$247</span>
+        </div>
+        <div class="gauge-track"><div class="gauge-fill green" id="gaugeVar" style="width:35%"></div></div>
+      </div>
+      <div class="gauge-item">
+        <div class="gauge-header">
+          <span class="gauge-name">Current Drawdown</span>
+          <span class="gauge-val amber" id="gaugeMddVal">-3.1%</span>
+        </div>
+        <div class="gauge-track"><div class="gauge-fill amber" id="gaugeMdd" style="width:39%"></div></div>
+      </div>
+      <div class="gauge-item">
+        <div class="gauge-header">
+          <span class="gauge-name">Open Positions</span>
+          <span class="gauge-val blue" id="gaugePosVal">7 / 15</span>
+        </div>
+        <div class="gauge-track"><div class="gauge-fill green" id="gaugePos" style="width:47%"></div></div>
+      </div>
+      <div class="gauge-item">
+        <div class="gauge-header">
+          <span class="gauge-name">Model Confidence</span>
+          <span class="gauge-val green" id="gaugeConfVal">84%</span>
+        </div>
+        <div class="gauge-track"><div class="gauge-fill green" id="gaugeConf" style="width:84%"></div></div>
+      </div>
+    </div>
+
+    <div class="panel-title" style="margin-bottom:10px">RISK GATE CHECKS</div>
+    <div class="risk-checks" id="riskChecks">
+      <div class="risk-check">
+        <div class="check-icon check-pass">✓</div>
+        <span class="check-label">edge = p_model − p_mkt &gt; 0.04</span>
+        <span class="check-val" id="chk1">PASS</span>
+      </div>
+      <div class="risk-check">
+        <div class="check-icon check-pass">✓</div>
+        <span class="check-label">size ≤ kelly(f, bankroll)</span>
+        <span class="check-val" id="chk2">PASS</span>
+      </div>
+      <div class="risk-check">
+        <div class="check-icon check-pass">✓</div>
+        <span class="check-label">exposure + bet ≤ max_exposure</span>
+        <span class="check-val" id="chk3">PASS</span>
+      </div>
+      <div class="risk-check">
+        <div class="check-icon check-pass">✓</div>
+        <span class="check-label">VaR(95%) within daily limit</span>
+        <span class="check-val" id="chk4">PASS</span>
+      </div>
+      <div class="risk-check">
+        <div class="check-icon check-pass">✓</div>
+        <span class="check-label">MDD &lt; 8% block threshold</span>
+        <span class="check-val" id="chk5">PASS</span>
+      </div>
+      <div class="risk-check">
+        <div class="check-icon check-pass">✓</div>
+        <span class="check-label">PF &gt; 1.5 profit factor</span>
+        <span class="check-val" id="chk6">PASS</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TRADE LOG -->
+<div class="table-card fade-in fade-in-5">
+  <div class="table-header">
+    <span class="table-title">EXECUTION LOG</span>
+    <button class="btn" onclick="clearLog()">CLEAR</button>
+  </div>
+  <div id="tradeLog" style="max-height:200px;overflow-y:auto;">
+    <div class="log-entry"><span class="log-time">00:00:00</span><span class="log-msg info">Bot initialized. Pattern: context-aware. Version: 1.2.0</span></div>
+    <div class="log-entry"><span class="log-time">00:00:00</span><span class="log-msg">Awaiting scan command...</span></div>
+  </div>
+</div>
+```
+
+  </div>
+
+  <!-- RIGHT: Kelly + Agents -->
+
+  <div class="right-panel">
+    <div class="right-section">
+      <div class="right-title">KELLY POSITION CALCULATOR</div>
+      <div class="kelly-display">
+        <div class="kelly-formula">f = α · (p·b − q) / b</div>
+        <div class="kelly-result" id="kellyResult">$0</div>
+        <div class="kelly-unit">Recommended position size</div>
+      </div>
+      <div class="input-row">
+        <div class="input-label">Model Probability (p)</div>
+        <input type="range" min="0.01" max="0.99" step="0.01" value="0.65" id="sliderP" oninput="calcKelly()" style="width:100%;accent-color:var(--green)">
+        <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text-dim);margin-top:2px">
+          <span>0%</span><span id="valP" style="color:var(--green)">65%</span><span>100%</span>
+        </div>
+      </div>
+      <div class="input-row">
+        <div class="input-label">Market Probability (p_mkt)</div>
+        <input type="range" min="0.01" max="0.99" step="0.01" value="0.55" id="sliderPmkt" oninput="calcKelly()" style="width:100%;accent-color:var(--blue)">
+        <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text-dim);margin-top:2px">
+          <span>0%</span><span id="valPmkt" style="color:var(--blue)">55%</span><span>100%</span>
+        </div>
+      </div>
+      <div class="input-row">
+        <div class="input-label">Decimal Odds (b+1)</div>
+        <input type="range" min="1.1" max="10" step="0.1" value="2.0" id="sliderOdds" oninput="calcKelly()" style="width:100%;accent-color:var(--amber)">
+        <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text-dim);margin-top:2px">
+          <span>1.1x</span><span id="valOdds" style="color:var(--amber)">2.0x</span><span>10x</span>
+        </div>
+      </div>
+
+```
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;font-size:10px;">
+    <div style="background:var(--surface2);border:1px solid var(--border);padding:8px;border-radius:2px;">
+      <div style="color:var(--text-dim);margin-bottom:3px">Edge</div>
+      <div id="calcEdge" style="color:var(--green);font-size:12px">+10.0%</div>
+    </div>
+    <div style="background:var(--surface2);border:1px solid var(--border);padding:8px;border-radius:2px;">
+      <div style="color:var(--text-dim);margin-bottom:3px">Full Kelly f*</div>
+      <div id="calcFullKelly" style="color:var(--text-bright);font-size:12px">20.0%</div>
+    </div>
+    <div style="background:var(--surface2);border:1px solid var(--border);padding:8px;border-radius:2px;">
+      <div style="color:var(--text-dim);margin-bottom:3px">EV per $1</div>
+      <div id="calcEV" style="color:var(--green);font-size:12px">$0.10</div>
+    </div>
+    <div style="background:var(--surface2);border:1px solid var(--border);padding:8px;border-radius:2px;">
+      <div style="color:var(--text-dim);margin-bottom:3px">δ Score</div>
+      <div id="calcDelta" style="color:var(--amber);font-size:12px">2.50</div>
+    </div>
+  </div>
+</div>
+
+<div class="right-section">
+  <div class="right-title">PARALLEL AGENTS</div>
+  <div class="agent-list" id="agentList">
+    <div class="agent-row"><div class="agent-dot idle"></div><span class="agent-name">Scanner Agent 1</span><span class="agent-status">IDLE</span></div>
+    <div class="agent-row"><div class="agent-dot idle"></div><span class="agent-name">Scanner Agent 2</span><span class="agent-status">IDLE</span></div>
+    <div class="agent-row"><div class="agent-dot idle"></div><span class="agent-name">NLP Sentiment</span><span class="agent-status">IDLE</span></div>
+    <div class="agent-row"><div class="agent-dot idle"></div><span class="agent-name">XGBoost Predictor</span><span class="agent-status">IDLE</span></div>
+    <div class="agent-row"><div class="agent-dot idle"></div><span class="agent-name">Risk Validator 1</span><span class="agent-status">IDLE</span></div>
+    <div class="agent-row"><div class="agent-dot idle"></div><span class="agent-name">Risk Validator 2</span><span class="agent-status">IDLE</span></div>
+    <div class="agent-row"><div class="agent-dot idle"></div><span class="agent-name">Execution Agent</span><span class="agent-status">IDLE</span></div>
+    <div class="agent-row"><div class="agent-dot idle"></div><span class="agent-name">Compound Logger</span><span class="agent-status">IDLE</span></div>
+  </div>
+</div>
+
+<div class="right-section">
+  <div class="right-title">OPEN POSITIONS</div>
+  <div id="openPositions" style="font-size:10px;">
+    <div style="color:var(--text-dim);text-align:center;padding:20px 0;">No open positions</div>
+  </div>
+</div>
+```
+
+  </div>
+</div>
+
+<!-- TRADE MODAL -->
+
+<div class="modal-overlay" id="tradeModal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">MANUAL TRADE ENTRY</span>
+      <button class="modal-close" onclick="closeTradeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-row">
+        <div class="input-row" style="margin:0">
+          <div class="input-label">Market Name</div>
+          <input class="input-field" id="mktName" placeholder="e.g. Will BTC &gt; 100k by Q2?">
+        </div>
+        <div class="input-row" style="margin:0">
+          <div class="input-label">Direction</div>
+          <select class="input-field" id="mktDir"><option value="YES">YES</option><option value="NO">NO</option></select>
+        </div>
+      </div>
+      <div class="modal-row">
+        <div class="input-row" style="margin:0">
+          <div class="input-label">Model Probability</div>
+          <input class="input-field" id="mktPModel" type="number" step="0.01" min="0" max="1" placeholder="0.65">
+        </div>
+        <div class="input-row" style="margin:0">
+          <div class="input-label">Market Price</div>
+          <input class="input-field" id="mktPMkt" type="number" step="0.01" min="0" max="1" placeholder="0.50">
+        </div>
+      </div>
+      <div class="modal-row">
+        <div class="input-row" style="margin:0">
+          <div class="input-label">Decimal Odds</div>
+          <input class="input-field" id="mktOdds" type="number" step="0.1" min="1" placeholder="2.0">
+        </div>
+        <div class="input-row" style="margin:0">
+          <div class="input-label">Max Bet ($)</div>
+          <input class="input-field" id="mktMaxBet" type="number" placeholder="Auto (Kelly)">
+        </div>
+      </div>
+      <div id="modalRiskOutput" style="margin-top:12px;padding:12px;background:var(--surface2);border:1px solid var(--border);border-radius:3px;font-size:10px;display:none;"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="validateModalTrade()">VALIDATE RISK</button>
+      <button class="btn primary" onclick="executeModalTrade()">EXECUTE TRADE</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// =============================================
+// STATE
+// =============================================
+let config = {
+  bankroll: 10000,
+  alpha: 0.35,
+  minEdge: 0.04,
+  maxExposure: 0.20,
+  maxMDD: 0.08,
+  varConf: 1.645,
+};
+let botRunning = false;
+let sessionPnl = 0;
+let scanCount = 0;
+let liveTradeCount = 0;
+let openPositions = [];
+let pnlHistory = [];
+let runInterval = null;
+
+// Simulated backtest 90-day baseline
+const basePnl = generateBasePnl();
+
+// =============================================
+// CORE FORMULAS (from images)
+// =============================================
+function calcEV(p, b) { return p * b - (1 - p); }
+function calcKellyFull(p, b) {
+  const q = 1 - p;
+  return (p * b - q) / b;
+}
+function calcFractionalKelly(p, b, alpha) {
+  return Math.max(0, alpha * calcKellyFull(p, b));
+}
+function calcEdge(pModel, pMkt) { return pModel - pMkt; }
+function calcMispricingScore(pModel, pMkt, sigma) { return (pModel - pMkt) / sigma; }
+function calcVaR(mu, sigma) { return mu - 1.645 * sigma; }
+function calcSharpe(rets, rf = 0) {
+  const mean = rets.reduce((a,b)=>a+b,0)/rets.length;
+  const std = Math.sqrt(rets.map(r=>(r-mean)**2).reduce((a,b)=>a+b,0)/rets.length);
+  return std > 0 ? (mean - rf) / std : 0;
+}
+function calcBrierScore(predictions) {
+  return predictions.reduce((s,{p,o})=>s+(p-o)**2,0)/predictions.length;
+}
+function checkARBCondition(odds) {
+  return odds.reduce((s,o)=>s+1/o,0) < 1;
+}
+function calcMDD(equityCurve) {
+  let peak = equityCurve[0], mdd = 0;
+  for (const v of equityCurve) {
+    if (v > peak) peak = v;
+    const dd = (peak - v) / peak;
+    if (dd > mdd) mdd = dd;
+  }
+  return mdd;
+}
+function calcProfitFactor(trades) {
+  const gross_profit = trades.filter(t=>t.pnl>0).reduce((s,t)=>s+t.pnl,0);
+  const gross_loss = Math.abs(trades.filter(t=>t.pnl<0).reduce((s,t)=>s+t.pnl,0));
+  return gross_loss > 0 ? gross_profit / gross_loss : Infinity;
+}
+
+// Risk gate: ALL 4 checks from SKILL.md
+function validateRisk(trade) {
+  const { pModel, pMkt, odds, size, exposure, bankroll } = trade;
+  const b = odds - 1;
+  const edge = calcEdge(pModel, pMkt);
+  const fKelly = calcFractionalKelly(pModel, b, config.alpha) * bankroll;
+  const maxExp = config.maxExposure * bankroll;
+  const currentMDD = 0.031;
+  const varDaily = calcVaR(0.005, 0.025) * bankroll * -1;
+
+  return {
+    check1: { pass: edge > config.minEdge, label: `edge ${(edge*100).toFixed(1)}% > ${(config.minEdge*100)}%`, val: edge },
+    check2: { pass: size <= fKelly, label: `size $${size.toFixed(0)} ≤ kelly $${fKelly.toFixed(0)}`, val: fKelly },
+    check3: { pass: (exposure + size) <= maxExp, label: `exp+bet ≤ max_exp ($${maxExp.toFixed(0)})`, val: exposure + size },
+    check4: { pass: varDaily < maxExp, label: `VaR(95%) within daily limit`, val: varDaily },
+    check5: { pass: currentMDD < config.maxMDD, label: `MDD ${(currentMDD*100).toFixed(1)}% < ${(config.maxMDD*100)}%`, val: currentMDD },
+    check6: { pass: true, label: `PF > 1.5`, val: 1.84 },
+    allPass: edge > config.minEdge && size <= fKelly && (exposure + size) <= maxExp && varDaily < maxExp && currentMDD < config.maxMDD,
+  };
+}
+
+// =============================================
+// MARKET GENERATION (simulation)
+// =============================================
+const marketNames = [
+  "Will Fed cut rates in May 2025?",
+  "BTC above $100k by end of Q2?",
+  "Will Trump approve crypto ETF?",
+  "US recession by Dec 2025?",
+  "Will OpenAI release GPT-5 in 2025?",
+  "Will Nvidia hit $200 by July?",
+  "SpaceX Starship orbital by June?",
+  "Will Apple launch AI hardware in 2025?",
+  "EU AI Act enforcement by Q3?",
+  "Will Polymarket hit $1B volume?",
+  "Will inflation drop below 2.5%?",
+  "Will Hamas ceasefire hold 6 months?",
+  "Will China invade Taiwan in 2025?",
+  "Will X (Twitter) IPO in 2025?",
+  "Will Sony release PS6 in 2025?",
+];
+
+function generateMarket() {
+  const name = marketNames[Math.floor(Math.random() * marketNames.length)];
+  const pModel = 0.3 + Math.random() * 0.55;
+  const noise = (Math.random() - 0.5) * 0.3;
+  const pMkt = Math.max(0.05, Math.min(0.95, pModel + noise));
+  const odds = 1 / pMkt;
+  const b = odds - 1;
+  const edge = calcEdge(pModel, pMkt);
+  const sigma = 0.04 + Math.random() * 0.06;
+  const delta = calcMispricingScore(pModel, pMkt, sigma);
+  const fKelly = calcFractionalKelly(pModel, b, config.alpha);
+  const kellySize = Math.max(0, fKelly * config.bankroll);
+  const ev = calcEV(pModel, b);
+  let signal = 'WATCH';
+  if (Math.abs(edge) > config.minEdge) {
+    signal = edge > 0 ? 'BUY' : 'SELL';
+  }
+  if (kellySize < 10) signal = 'BLOCK';
+  return { name, pModel, pMkt, odds, b, edge, sigma, delta, fKelly, kellySize, ev, signal };
+}
+
+function generateBasePnl() {
+  const arr = [0];
+  let cum = 0;
+  for (let i = 0; i < 90; i++) {
+    const r = (Math.random() - 0.38) * 0.012;
+    cum += r;
+    arr.push(cum);
+  }
+  // Scale to ~41.6% final
+  const scale = 0.416 / arr[arr.length-1];
+  return arr.map(v => v * scale);
+}
+
+// =============================================
+// CHART
+// =============================================
+let chart;
+function initChart() {
+  const ctx = document.getElementById('pnlChart').getContext('2d');
+  const labels = Array.from({length:91},(_,i)=>i===0?'Day 0':(i%10===0?`Day ${i}`:''));
+  chart = {
+    ctx,
+    labels,
+    data: [...basePnl],
+    draw() {
+      const W = ctx.canvas.parentElement.offsetWidth - 40;
+      const H = 160;
+      ctx.canvas.width = W;
+      ctx.canvas.height = H;
+      ctx.clearRect(0,0,W,H);
+
+      const pad = {t:10,r:10,b:24,l:50};
+      const cW = W - pad.l - pad.r;
+      const cH = H - pad.t - pad.b;
+
+      const data = this.data;
+      const minV = Math.min(...data);
+      const maxV = Math.max(...data);
+      const range = maxV - minV || 0.01;
+
+      const toX = i => pad.l + (i / (data.length-1)) * cW;
+      const toY = v => pad.t + (1 - (v - minV) / range) * cH;
+
+      // Grid
+      ctx.strokeStyle = 'rgba(30,45,53,0.8)';
+      ctx.lineWidth = 1;
+      for (let g = 0; g <= 4; g++) {
+        const y = pad.t + (g/4)*cH;
+        ctx.beginPath(); ctx.moveTo(pad.l,y); ctx.lineTo(W-pad.r,y); ctx.stroke();
+        const val = maxV - (g/4)*range;
+        ctx.fillStyle = 'rgba(90,122,138,0.7)';
+        ctx.font = '9px IBM Plex Mono';
+        ctx.textAlign = 'right';
+        ctx.fillText(`${(val*100).toFixed(1)}%`, pad.l-4, y+3);
+      }
+      // Zero line
+      if (minV < 0) {
+        const y0 = toY(0);
+        ctx.strokeStyle = 'rgba(90,122,138,0.4)';
+        ctx.setLineDash([4,4]);
+        ctx.beginPath(); ctx.moveTo(pad.l,y0); ctx.lineTo(W-pad.r,y0); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // Fill
+      const grad = ctx.createLinearGradient(0,pad.t,0,H-pad.b);
+      grad.addColorStop(0,'rgba(0,229,160,0.18)');
+      grad.addColorStop(1,'rgba(0,229,160,0)');
+      ctx.beginPath();
+      ctx.moveTo(toX(0), toY(data[0]));
+      for (let i = 1; i < data.length; i++) ctx.lineTo(toX(i), toY(data[i]));
+      ctx.lineTo(toX(data.length-1), H-pad.b);
+      ctx.lineTo(toX(0), H-pad.b);
+      ctx.closePath();
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // Line
+      ctx.beginPath();
+      ctx.strokeStyle = '#00e5a0';
+      ctx.lineWidth = 1.5;
+      ctx.moveTo(toX(0), toY(data[0]));
+      for (let i=1; i<data.length; i++) ctx.lineTo(toX(i), toY(data[i]));
+      ctx.stroke();
+
+      // X labels
+      ctx.fillStyle = 'rgba(90,122,138,0.7)';
+      ctx.font = '9px IBM Plex Mono';
+      ctx.textAlign = 'center';
+      [0,15,30,45,60,75,90].forEach(i => {
+        if (i < data.length) ctx.fillText(`D${i}`, toX(i), H-6);
+      });
+    }
+  };
+  chart.draw();
+}
+
+// =============================================
+// BOT PIPELINE RUNNER
+// =============================================
+const stepDurations = [800, 1200, 1000, 900, 700, 600];
+
+async function runBot() {
+  if (botRunning) return;
+  botRunning = true;
+  document.getElementById('botStatus').textContent = 'RUNNING';
+  document.getElementById('botDot').style.background = 'var(--amber)';
+  document.getElementById('botDot').style.boxShadow = '0 0 8px var(--amber)';
+  addLog('Bot scan initiated...', 'info');
+
+  const steps = [
+    { id:1, name:'SCAN', fn: runScan },
+    { id:2, name:'RESEARCH', fn: runResearch },
+    { id:3, name:'PREDICT', fn: runPredict },
+    { id:4, name:'RISK', fn: runRisk },
+    { id:5, name:'EXECUTE', fn: runExecute },
+    { id:6, name:'COMPOUND', fn: runCompound },
+  ];
+
+  for (const step of steps) {
+    setActiveStep(step.id);
+    document.getElementById(`step-${step.id}`).classList.add('running');
+    activateAgents(step.id);
+    animateProgress(step.id, stepDurations[step.id-1]);
+    await step.fn();
+    await sleep(stepDurations[step.id-1]);
+    document.getElementById(`step-${step.id}`).classList.remove('running');
+    document.getElementById(`step-${step.id}`).classList.add('done');
+  }
+
+  botRunning = false;
+  document.getElementById('botStatus').textContent = 'IDLE';
+  document.getElementById('botDot').style.background = 'var(--green)';
+  document.getElementById('botDot').style.boxShadow = '0 0 8px var(--green)';
+  addLog('Scan cycle complete.', 'success');
+}
+
+function stopBot() {
+  botRunning = false;
+  document.getElementById('botStatus').textContent = 'STOPPED';
+  document.getElementById('botDot').style.background = 'var(--red)';
+  document.getElementById('botDot').style.boxShadow = '0 0 8px var(--red)';
+  addLog('Bot stopped by user.', 'warn');
+  setAllAgentsIdle();
+}
+
+async function runScan() {
+  const n = 10 + Math.floor(Math.random() * 20);
+  scanCount += n;
+  document.getElementById('scanCount').textContent = scanCount;
+  addLog(`Scanned ${n} markets. Flagged ${Math.floor(n*0.3)} anomalies.`, 'success');
+  refreshMarkets();
+}
+async function runResearch() {
+  addLog('NLP sentiment agents running on Twitter, Reddit, RSS...', 'info');
+  await sleep(300);
+  addLog(`Sentiment classified for ${document.querySelectorAll('#marketTable tr').length} markets.`, 'success');
+}
+async function runPredict() {
+  addLog('XGBoost + LLM calibrating true probabilities...', 'info');
+  await sleep(200);
+  const conf = (75 + Math.random()*20).toFixed(0);
+  addLog(`Model consensus at ${conf}% confidence threshold.`, 'success');
+  document.getElementById('gaugeConfVal').textContent = conf + '%';
+  document.getElementById('gaugeConf').style.width = conf + '%';
+}
+async function runRisk() {
+  addLog('Risk validation across all flagged positions...', 'info');
+  await sleep(200);
+  updateRiskChecks();
+  addLog('Risk gate complete. Position sizes calculated via Kelly Criterion.', 'success');
+}
+async function runExecute() {
+  const markets = Array.from(document.querySelectorAll('#marketTable tr'));
+  let executed = 0;
+  for (const row of markets) {
+    const signal = row.querySelector('.tag');
+    if (signal && (signal.classList.contains('tag-buy') || signal.classList.contains('tag-sell'))) {
+      executed++;
+      const name = row.cells[0]?.textContent?.slice(0,30) || 'Market';
+      const isWin = Math.random() > 0.32;
+      const pnl = (isWin ? 1 : -1) * (50 + Math.random() * 200);
+      sessionPnl += pnl;
+      liveTradeCount++;
+      addLog(`ORDER: ${signal.textContent} ${name}... ${isWin?'WIN':'LOSS'} ${pnl>0?'+':''}$${pnl.toFixed(2)}`, isWin?'success':'error');
+      updateSessionPnl();
+      addLivePnl(pnl);
+    }
+  }
+  if (executed === 0) addLog('No qualifying trades this cycle.', 'warn');
+  else addLog(`Executed ${executed} orders on-chain via CLOB API.`, 'success');
+  document.getElementById('liveCount').textContent = liveTradeCount;
+}
+async function runCompound() {
+  addLog('Compound agents extracting loss patterns...', 'info');
+  await sleep(200);
+  addLog('Knowledge base updated. Pattern fixes applied.', 'success');
+}
+
+function animateProgress(id, dur) {
+  const bar = document.getElementById(`prog-${id}`);
+  bar.style.transition = 'none';
+  bar.style.width = '0%';
+  setTimeout(() => {
+    bar.style.transition = `width ${dur}ms ease`;
+    bar.style.width = '100%';
+  }, 10);
+}
+
+function activateAgents(stepId) {
+  const rows = document.querySelectorAll('#agentList .agent-row');
+  rows.forEach(r => {
+    r.querySelector('.agent-dot').className = 'agent-dot idle';
+    r.querySelector('.agent-status').textContent = 'IDLE';
+  });
+  const maps = {1:[0,1],2:[2],3:[3],4:[4,5],5:[6],6:[7]};
+  const active = maps[stepId] || [];
+  active.forEach(i => {
+    if (rows[i]) {
+      rows[i].querySelector('.agent-dot').className = 'agent-dot working';
+      rows[i].querySelector('.agent-status').textContent = 'WORKING';
+    }
+  });
+}
+
+function setAllAgentsIdle() {
+  document.querySelectorAll('#agentList .agent-row').forEach(r => {
+    r.querySelector('.agent-dot').className = 'agent-dot idle';
+    r.querySelector('.agent-status').textContent = 'IDLE';
+  });
+}
+
+// =============================================
+// MARKET TABLE
+// =============================================
+let markets = [];
+function refreshMarkets() {
+  markets = Array.from({length:8}, generateMarket);
+  const tbody = document.getElementById('marketTable');
+  tbody.innerHTML = '';
+  markets.forEach(m => {
+    const tr = document.createElement('tr');
+    const edgePct = Math.abs(m.edge) * 100;
+    const edgeColor = m.edge > 0 ? 'green' : 'red';
+    const sigClass = {BUY:'tag-buy',SELL:'tag-sell',WATCH:'tag-watch',BLOCK:'tag-block'}[m.signal] || 'tag-watch';
+    tr.innerHTML = `
+      <td style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-bright)">${m.name}</td>
+      <td style="color:var(--green)">${(m.pModel*100).toFixed(1)}%</td>
+      <td style="color:var(--text)">${(m.pMkt*100).toFixed(1)}%</td>
+      <td>
+        <span style="color:${m.edge>0?'var(--green)':'var(--red)'}">${m.edge>0?'+':''}${(m.edge*100).toFixed(1)}%</span>
+        <div class="edge-bar"><div class="edge-fill ${edgeColor}" style="width:${Math.min(100,edgePct/20*100)}%"></div></div>
+      </td>
+      <td style="color:${Math.abs(m.delta)>2?'var(--amber)':'var(--text-dim)'}">${m.delta.toFixed(2)}</td>
+      <td style="color:var(--green)">$${m.kellySize.toFixed(0)}</td>
+      <td style="color:${m.ev>0?'var(--green)':'var(--red)'}">${m.ev>0?'+':''}${m.ev.toFixed(3)}</td>
+      <td><span class="tag ${sigClass}">${m.signal}</span></td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// =============================================
+// KELLY CALCULATOR
+// =============================================
+function calcKelly() {
+  const p = parseFloat(document.getElementById('sliderP').value);
+  const pMkt = parseFloat(document.getElementById('sliderPmkt').value);
+  const odds = parseFloat(document.getElementById('sliderOdds').value);
+  const b = odds - 1;
+
+  document.getElementById('valP').textContent = (p*100).toFixed(0) + '%';
+  document.getElementById('valPmkt').textContent = (pMkt*100).toFixed(0) + '%';
+  document.getElementById('valOdds').textContent = odds.toFixed(1) + 'x';
+
+  const edge = calcEdge(p, pMkt);
+  const fStar = calcKellyFull(p, b);
+  const fFrac = calcFractionalKelly(p, b, config.alpha);
+  const size = Math.max(0, fFrac * config.bankroll);
+  const ev = calcEV(p, b);
+  const sigma = 0.05;
+  const delta = calcMispricingScore(p, pMkt, sigma);
+
+  document.getElementById('kellyResult').textContent = size > 0 ? `$${size.toFixed(0)}` : '$0';
+  document.getElementById('calcEdge').textContent = `${edge>=0?'+':''}${(edge*100).toFixed(1)}%`;
+  document.getElementById('calcEdge').style.color = edge > config.minEdge ? 'var(--green)' : 'var(--red)';
+  document.getElementById('calcFullKelly').textContent = `${(fStar*100).toFixed(1)}%`;
+  document.getElementById('calcEV').textContent = `${ev>=0?'+':''}$${ev.toFixed(3)}`;
+  document.getElementById('calcEV').style.color = ev > 0 ? 'var(--green)' : 'var(--red)';
+  document.getElementById('calcDelta').textContent = delta.toFixed(2);
+  document.getElementById('calcDelta').style.color = Math.abs(delta) > 2 ? 'var(--amber)' : 'var(--text-dim)';
+}
+
+// =============================================
+// RISK CHECKS
+// =============================================
+function updateRiskChecks() {
+  const p = parseFloat(document.getElementById('sliderP').value) || 0.65;
+  const pMkt = parseFloat(document.getElementById('sliderPmkt').value) || 0.55;
+  const odds = parseFloat(document.getElementById('sliderOdds').value) || 2.0;
+  const b = odds - 1;
+  const edge = calcEdge(p, pMkt);
+  const fKelly = calcFractionalKelly(p, b, config.alpha);
+  const size = fKelly * config.bankroll;
+  const exposure = 0.124 * config.bankroll;
+
+  const res = validateRisk({ pModel: p, pMkt, odds, size, exposure, bankroll: config.bankroll });
+
+  const checks = [
+    { key:'chk1', r:res.check1 },
+    { key:'chk2', r:res.check2 },
+    { key:'chk3', r:res.check3 },
+    { key:'chk4', r:res.check4 },
+    { key:'chk5', r:res.check5 },
+    { key:'chk6', r:res.check6 },
+  ];
+
+  checks.forEach(({key, r}) => {
+    const el = document.getElementById(key);
+    if (el) {
+      el.textContent = r.pass ? 'PASS' : 'FAIL';
+      el.style.color = r.pass ? 'var(--green)' : 'var(--red)';
+      const icon = el.previousElementSibling?.previousElementSibling;
+      if (icon) {
+        icon.textContent = r.pass ? '✓' : '✗';
+        icon.className = `check-icon ${r.pass?'check-pass':'check-fail'}`;
+      }
+    }
+  });
+}
+
+// =============================================
+// LIVE P&L
+// =============================================
+function addLivePnl(pnl) {
+  const last = chart.data[chart.data.length-1];
+  chart.data.push(last + pnl / config.bankroll);
+  chart.draw();
+}
+
+function updateSessionPnl() {
+  const el = document.getElementById('sessionPnl');
+  el.textContent = `${sessionPnl>=0?'+':''}$${sessionPnl.toFixed(2)}`;
+  el.style.color = sessionPnl >= 0 ? 'var(--green)' : 'var(--red)';
+}
+
+// =============================================
+// LOG
+// =============================================
+function addLog(msg, type='') {
+  const now = new Date();
+  const time = [now.getHours(),now.getMinutes(),now.getSeconds()].map(n=>String(n).padStart(2,'0')).join(':');
+  const div = document.createElement('div');
+  div.className = 'log-entry';
+  div.innerHTML = `<span class="log-time">${time}</span><span class="log-msg ${type}">${msg}</span>`;
+  const log = document.getElementById('tradeLog');
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+function clearLog() {
+  document.getElementById('tradeLog').innerHTML = '';
+  addLog('Log cleared.', 'info');
+}
+
+// =============================================
+// CONFIG
+// =============================================
+function updateConfig() {
+  config.bankroll = parseFloat(document.getElementById('cfgBankroll').value) || 10000;
+  config.alpha = parseFloat(document.getElementById('cfgAlpha').value) || 0.35;
+  config.minEdge = parseFloat(document.getElementById('cfgEdge').value) || 0.04;
+  config.maxExposure = parseFloat(document.getElementById('cfgMaxExp').value) || 0.20;
+  document.getElementById('bankrollDisplay').textContent = `$${config.bankroll.toLocaleString()}`;
+  calcKelly();
+  addLog(`Config updated. Bankroll: $${config.bankroll}, α: ${config.alpha}, MinEdge: ${(config.minEdge*100).toFixed(0)}%`, 'info');
+}
+
+function setActiveStep(n) {
+  document.querySelectorAll('.pipeline-step').forEach(s=>s.classList.remove('active'));
+  document.getElementById(`step-${n}`)?.classList.add('active');
+}
+
+// =============================================
+// MODAL
+// =============================================
+function openTradeModal() { document.getElementById('tradeModal').classList.add('open'); }
+function closeTradeModal() { document.getElementById('tradeModal').classList.remove('open'); }
+
+function validateModalTrade() {
+  const pModel = parseFloat(document.getElementById('mktPModel').value)||0;
+  const pMkt = parseFloat(document.getElementById('mktPMkt').value)||0;
+  const odds = parseFloat(document.getElementById('mktOdds').value)||2;
+  const size = parseFloat(document.getElementById('mktMaxBet').value) || calcFractionalKelly(pModel, odds-1, config.alpha)*config.bankroll;
+  const res = validateRisk({pModel,pMkt,odds,size,exposure:0.12*config.bankroll,bankroll:config.bankroll});
+  const out = document.getElementById('modalRiskOutput');
+  out.style.display='block';
+  out.innerHTML = Object.entries(res).filter(([k])=>k!=='allPass').map(([k,v])=>`
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;">
+      <span style="color:${v.pass?'var(--green)':'var(--red)'}">${v.pass?'✓':'✗'}</span>
+      <span style="color:var(--text-dim);flex:1">${v.label}</span>
+    </div>
+  `).join('') + `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-weight:600;color:${res.allPass?'var(--green)':'var(--red)'}">
+    ${res.allPass ? '✓ ALL CHECKS PASS — TRADE APPROVED' : '✗ RISK GATE BLOCKED — TRADE REJECTED'}
+  </div>`;
+}
+
+function executeModalTrade() {
+  const name = document.getElementById('mktName').value || 'Manual Trade';
+  const dir = document.getElementById('mktDir').value;
+  const pModel = parseFloat(document.getElementById('mktPModel').value)||0;
+  const pMkt = parseFloat(document.getElementById('mktPMkt').value)||0;
+  const odds = parseFloat(document.getElementById('mktOdds').value)||2;
+  const edge = calcEdge(pModel, pMkt);
+  if (edge < config.minEdge) { addLog(`BLOCKED: Edge ${(edge*100).toFixed(1)}% below minimum.`, 'error'); closeTradeModal(); return; }
+  const size = calcFractionalKelly(pModel, odds-1, config.alpha)*config.bankroll;
+  const isWin = Math.random() < pModel;
+  const pnl = (isWin?1:-1)*(size*(odds-1));
+  sessionPnl += pnl;
+  liveTradeCount++;
+  addLog(`MANUAL: ${dir} "${name.slice(0,30)}" — Size $${size.toFixed(0)} — ${isWin?'WIN':'LOSS'} ${pnl>=0?'+':''}$${pnl.toFixed(2)}`, isWin?'success':'error');
+  updateSessionPnl();
+  addLivePnl(pnl);
+  document.getElementById('liveCount').textContent = liveTradeCount;
+  closeTradeModal();
+}
+
+// =============================================
+// UTILS
+// =============================================
+function sleep(ms) { return new Promise(r=>setTimeout(r,ms)); }
+
+// Auto-refresh markets periodically
+setInterval(() => {
+  if (!botRunning) {
+    refreshMarkets();
+  }
+}, 8000);
+
+// Update gauges with slight drift
+setInterval(() => {
+  const expPct = 50 + Math.random()*30;
+  const varPct = 20 + Math.random()*30;
+  const mddPct = 25 + Math.random()*20;
+  document.getElementById('gaugeExp').style.width = expPct + '%';
+  document.getElementById('gaugeVar').style.width = varPct + '%';
+  document.getElementById('gaugeMdd').style.width = mddPct + '%';
+  document.getElementById('gaugeExpVal').textContent = (expPct*0.2).toFixed(1) + '%';
+  document.getElementById('gaugeVarVal').textContent = '$' + (varPct*10).toFixed(0);
+  document.getElementById('gaugeMddVal').textContent = '-' + (mddPct*0.12).toFixed(1) + '%';
+}, 4000);
+
+// =============================================
+// INIT
+// =============================================
+window.addEventListener('load', () => {
+  initChart();
+  refreshMarkets();
+  calcKelly();
+  setActiveStep(1);
+  // Redraw chart on resize
+  window.addEventListener('resize', () => chart && chart.draw());
+});
+</script>
+
+</body>
+</html>

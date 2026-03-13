@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trading Bot Application</title>
+    <style>
+        :root {
+            --bg: #f0f0f0;
+            --text-color: #333;
+            --primary-color: #007bff;
+        }
+        body {
+            background-color: var(--bg);
+            color: var(--text-color);
+            font-family: Arial, sans-serif;
+        }
+        h1 {
+            color: var(--primary-color);
+        }
+        .container {
+            margin: 0 auto;
+            padding: 20px;
+            max-width: 800px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        /* Add more styles as needed */
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Welcome to the Trading Bot Application</h1>
+        <p>This application helps you manage your trading strategies effectively!</p>
+        <input type="text" placeholder="Enter your trading strategy" />
+        <button>Submit</button>
+        <p id="output"></p>
+    </div>
+    <script>
+        // Your JavaScript code here
+        document.querySelector('button').addEventListener('click', function() {
+            const input = document.querySelector('input').value;
+            document.getElementById('output').innerText = 'You submitted: ' + input;
+        });
+    </script>
+</body>
+</html>
