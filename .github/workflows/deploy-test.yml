@@ -1,41 +1,108 @@
-name: Test and Deploy Trading Bot
+ame: Test and Deploy Trading Bot
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
+
+env:
+  NODE_VERSION: '20'
 
 jobs:
   test:
+    name: Validate & Test
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
-      - name: HTML Validation
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
         run: |
-          npm install -g htmlhint
-          htmlhint .
-      - name: Upload artifacts
+          if [ -f package.json ]; then
+            npm ci
+          else
+            echo "No package.json found, skipping npm ci"
+          fi
+
+      - name: Install HTMLHint
+        run: npm install -g htmlhint
+
+      - name: Run HTML Validation
+        run: |
+          echo "Running HTMLHint on all HTML files..."
+          htmlhint "**/*.html" --config .htmlhintrc 2>/dev/null || htmlhint "**/*.html"
+
+      - name: Check for HTML files
+        run: |
+          html_count=$(find . -name "*.html" ! -path "./.git/*" ! -path "./node_modules/*" | wc -l)
+          echo "Found $html_count HTML file(s)"
+          if [ "$html_count" -eq 0 ]; then
+            echo "WARNING: No HTML files found in repository"
+          fi
+
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: html-artifacts
-          path: .
+          path: |
+            .
+            !.git
+            !node_modules
+            !.github
+          retention-days: 1
 
   deploy:
+    name: Deploy to GitHub Pages
     runs-on: ubuntu-latest
     needs: test
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+
     steps:
-      - name: Download artifacts
+      - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
           name: html-artifacts
+          path: ./dist
+
+      - name: List deployment files
+        run: |
+          echo "Files to be deployed:"
+          find ./dist -type f | sort
+
       - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
+        id: deploy
+        uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: .
+          publish_dir: ./dist
+          publish_branch: gh-pages
+          force_orphan: true
+          user_name: 'github-actions[bot]'
+          user_email: 'github-actions[bot]@users.noreply.github.com'
+          commit_message: 'Deploy: ${{ github.event.head_commit.message }}'
+
+      - name: Deployment summary
+        run: |
+          echo "✅ Deployment complete!"
+          echo "🌐 Site will be live at: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
+
 
